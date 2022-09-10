@@ -1,0 +1,42 @@
+log:
+  level: INFO
+accessLog:
+  filters:
+    statusCodes:
+      - "200-600"
+api:
+  dashboard: true
+
+providers:
+  file:
+    directory: /etc/traefik/configs
+    watch: true
+
+entryPoints:
+  web:
+    address: :80
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+      # middlewares:
+      #   - hsts-header@file
+
+  websecure:
+    address: :443
+    http:
+      tls:
+        options: cert-options@file
+        certResolver: leresolver
+
+certificatesResolvers:
+  leresolver:
+    acme:
+      email: "osaydabdu@gmail.com"
+      storage: "/etc/traefik/acme/acme.json"
+      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      keyType: RSA2048
+      httpChallenge:
+        entryPoint: web

@@ -1,0 +1,19 @@
+http:
+  routers:
+    dashboard-router:
+      rule: "Host(`{{env "TRAEFIK_DOMAIN"}}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))"
+      middlewares:
+        - dashboard-auth@file
+      service: api@internal
+    backend-router:
+      rule: "Host(`{{env "DOMAIN"}}`) && PathPrefix(`/backend`)"
+      middlewares:
+        - strip_backend_prefix@file
+        - headers-middleware@file
+      service: backend-service
+
+  services:
+    backend-service:
+      loadBalancer:
+        servers:
+          - url: "http://backend:8916/"

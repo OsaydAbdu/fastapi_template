@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  proxy:
+    build:
+      context: ./proxy
+      dockerfile: prod.Dockerfile
+    environment:
+      - DOMAIN=vote.osayd.io
+      - TRAEFIK_DOMAIN=traefik.vote.osayd.io
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
+
+  backend:
+    build:
+      args:
+        - INSTALL_DEV=false
+    environment:
+      ENV: production
+      BACKEND_LOG_LEVEL: info
+      NUM_WORKERS: 4
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

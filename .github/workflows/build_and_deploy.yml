@@ -1,0 +1,94 @@
+name: Build and deploy code
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build_release:
+    runs-on: [self-hosted]
+    steps:
+    - name: Change file permissions
+      run: |
+        set -x
+        sudo chown -R $USER:$USER $PWD
+    - uses: actions/checkout@v2
+      with:
+        clean: true
+        fetch-depth: 0
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+    - name: Determine PR Type
+      run: |
+        if ${{ contains(github.event.commits.*.author.name, 'deploy-bot') }}; then
+          echo "should_publish_images=true" >> $GITHUB_ENV
+        else
+          echo "should_build_image=true" >> $GITHUB_ENV
+        fi
+    - name: Check if other deploy-bot PRs exist
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
+        [[ `gh pr list --search "head:deploy-bot" --json number --jq length` == 0 ]]
+    - name: Setup node
+      if: ${{ env.should_build_image == 'true' }}
+      uses: actions/setup-node@v2
+      with:
+        node-version: '16'
+    - name: Configure the github cli
+      run: |
+        echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
+        git config --local user.name 'deploy-bot'
+        git config --local user.email 'OsaydAbdu@gmail.com'
+        git remote set-url origin https://deploy-bot:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+    - name: Make new Version
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        set -x
+        npm install -g standard-version@9.3.0
+        standard-version
+        export NEW_VERSION=$(git describe --tags)
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+    - name: Update version number
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        export NEW_VERSION=${{ env.NEW_VERSION }}
+        ./scripts/update_versions.sh $NEW_VERSION
+    - name: tag and commit new version to bot branch
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        git commit --amend --no-edit
+        git tag -d ${{ env.NEW_VERSION }}
+        git tag -a -m "chore(release): ${{ env.NEW_VERSION }}" ${{ env.NEW_VERSION }}
+    - name: Use build script to build images
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        ./scripts/build_images.sh ${{ env.NEW_VERSION }} ;
+    - name: Create release branch
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        git checkout -b deploy-bot-${{github.run_id}}-${{github.run_number}}
+    - name: Make Deploy PR
+      if: ${{ env.should_build_image == 'true' }}
+      run: |
+        git push --follow-tags --set-upstream origin deploy-bot-${{github.run_id}}-${{github.run_number}}
+        COMMITS_WITHOUT_QUOTES=$(echo '${{ toJSON(github.event.commits.*.url) }}' | sed 's/[",]//g')
+        gh pr create --reviewer OsaydAbdu --title "Auto publish release version $(git describe --tags)" \
+        --body "Commits: $COMMITS_WITHOUT_QUOTES" --base master
+
+  deploy-image:
+    if: ${{ contains(github.event.commits.*.author.name, 'deploy-bot') }}
+    runs-on: [ self-hosted ]
+    needs: build_release
+    steps:
+    - name: Change file permissions
+      run: |
+        sudo chown -R $USER:$USER $PWD
+    - uses: actions/checkout@v2
+      with:
+        clean: true
+    - name: Deploy the stack
+      run: |
+        ./scripts/aws_deploy.sh

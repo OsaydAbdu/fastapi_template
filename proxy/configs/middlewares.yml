@@ -1,0 +1,27 @@
+http:
+  middlewares:
+    strip_backend_prefix:
+      stripPrefix:
+        prefixes:
+          - "/backend"
+    hsts-header:
+      headers:
+        customResponseHeaders:
+          Strict-Transport-Security:  "max-age=604800" # 1 week in seconds
+    limit-body-size:
+      buffering:
+        maxRequestBodyBytes: 500000000 # 500mb
+    headers-middleware:
+      chain:
+        middlewares:
+          - hsts-header
+          - limit-body-size
+    dashboard-auth:
+      basicAuth:
+        users:
+          - {{env "DASHBOARD_PASSWORD"}}
+
+tls:
+  options:
+    cert-options:
+      minVersion: VersionTLS13
